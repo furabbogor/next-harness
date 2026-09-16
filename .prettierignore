@@ -7,3 +7,4 @@ test-results/
 package-lock.json
 next-env.d.ts
 *.tsbuildinfo
+deepseek-harness-master/
