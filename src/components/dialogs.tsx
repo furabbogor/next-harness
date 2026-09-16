@@ -1,0 +1,81 @@
+"use client";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ArrowRight, Check, Code2, Download, FilePlus2, FlaskConical, KeyRound, LockKeyhole, ShieldCheck, Upload, X } from "lucide-react";
+import type { AgentConfig, PresetId, PublicConfig } from "@/lib/types";
+import { PRESETS, TOOL_DEFINITIONS } from "@/lib/settings";
+import { errorMessage } from "@/lib/client-api";
+import { formatBytes, HarnessMark, IconButton, Spinner } from "./ui";
+
+export function Dialog({ title, onClose, children, wide = false }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+  const id = useId();
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    const frame = requestAnimationFrame(() => { (ref.current?.querySelector("input, textarea, select, button") as HTMLElement | null)?.focus(); });
+    return () => { cancelAnimationFrame(frame); previous?.focus(); };
+  }, []);
+  return <div className="dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section ref={ref} className={`dialog ${wide ? "dialog-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={id} onKeyDown={(event) => {
+    if (event.key === "Escape") { event.stopPropagation(); onClose(); }
+    if (event.key === "Tab") {
+      const targets = Array.from(ref.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), textarea:not(:disabled), select:not(:disabled), a[href], [tabindex="0"]') ?? []).filter((element) => element.getClientRects().length > 0);
+      const first = targets[0], last = targets.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+  }}><header className="dialog-header"><h2 id={id}>{title}</h2><IconButton label="Close dialog" onClick={onClose}><X size={18} /></IconButton></header>{children}</section></div>;
+}
+
+export function SettingsDialog({ config, publicConfig, existing, onClose, onSave }: { config: AgentConfig; publicConfig: PublicConfig; existing: boolean; onClose: () => void; onSave: (config: AgentConfig) => Promise<void> }) {
+  const [draft, setDraft] = useState(() => structuredClone(config));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const provider = publicConfig.providers.find((item) => item.id === draft.provider)!;
+  async function submit(event: FormEvent) { event.preventDefault(); setSaving(true); setError(""); try { await onSave(draft); onClose(); } catch (error) { setError(errorMessage(error)); } finally { setSaving(false); } }
+  return <Dialog title="Agent settings" onClose={() => { if (!saving) onClose(); }} wide><form onSubmit={submit}><div className="dialog-body settings-body"><p className="dialog-intro">{existing ? "Configure this session’s agent. Its past messages and events stay intact." : "A few good defaults for your next session. Nothing is sent until you start a task."}</p>
+    <fieldset className="form-section"><legend>Choose a working style</legend><div className="preset-grid">{Object.entries(PRESETS).map(([id, preset]) => <button key={id} type="button" aria-pressed={draft.preset === id} className={draft.preset === id ? "selected" : ""} onClick={() => setDraft({ ...draft, preset: id as PresetId, systemPrompt: preset.prompt })}><span>{preset.label}{draft.preset === id && <Check size={13} />}</span><small>{preset.description}</small></button>)}</div></fieldset>
+    <div className="form-columns"><label>Provider<select value={draft.provider} onChange={(event) => { const id = event.target.value as AgentConfig["provider"]; setDraft({ ...draft, provider: id, model: publicConfig.providers.find((item) => item.id === id)!.models[0] }); }}>{publicConfig.providers.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}</select></label><label>Model<select value={draft.model} onChange={(event) => setDraft({ ...draft, model: event.target.value })}>{provider.models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label></div>
+    {draft.provider === "demo" ? <div className="connection-notice"><FlaskConical size={16} /><p><strong>Demo means deterministic.</strong> No model is called and there are no model charges. Tool operations and approvals still happen for real.</p></div> : <div className={`connection-notice ${provider.configured ? "" : "notice-warning"}`}><KeyRound size={16} /><div><strong>{provider.configured ? "API key configured on the server." : "One server-side setting to go."}</strong><p>{provider.configured ? "Your key is never sent to the browser. Provider availability and account balance are checked when a run starts." : "Set DEEPSEEK_API_KEY in .env and restart the server. A missing or invalid key returns an error; it never falls back to demo."}</p><code>DEEPSEEK_API_KEY=your_key_here</code></div></div>}
+    <label className="form-label">System instructions<textarea className="system-prompt" value={draft.systemPrompt} onChange={(event) => setDraft({ ...draft, systemPrompt: event.target.value })} required maxLength={12000} rows={5} /><small>Changing the preset replaces these instructions. Safety checks still apply.</small></label>
+    <div className="form-columns"><label>Maximum model steps<input type="number" min={1} max={12} value={draft.maxSteps} onChange={(event) => setDraft({ ...draft, maxSteps: Number(event.target.value) })} required /></label><label>Output tokens per step<input type="number" min={256} max={8192} step={256} value={draft.maxTokens} onChange={(event) => setDraft({ ...draft, maxTokens: Number(event.target.value) })} required /></label></div>
+    <fieldset className="form-section"><legend>Available tools</legend><div className="tool-options">{TOOL_DEFINITIONS.map((tool) => <label key={tool.name}><input type="checkbox" checked={draft.tools.includes(tool.name)} onChange={(event) => setDraft({ ...draft, tools: event.target.checked ? [...draft.tools, tool.name] : draft.tools.filter((name) => name !== tool.name) })} /><span><strong>{tool.label}</strong><small>{tool.approvalRequired ? "Always requires your approval" : tool.name === "update_plan" ? "Keeps the visible task plan up to date" : "Read-only access to session files"}</small></span>{tool.approvalRequired && <ShieldCheck size={15} />}</label>)}</div></fieldset>
+    {error && <p className="form-error" role="alert">{error}</p>}</div><footer className="dialog-footer"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Cancel</button><button className="button primary" disabled={saving}>{saving && <Spinner />}Save settings</button></footer></form></Dialog>;
+}
+
+export function AddFileDialog({ onClose, onSave }: { onClose: () => void; onSave: (path: string, content: string) => Promise<void> }) {
+  const [path, setPath] = useState("");
+  const [content, setContent] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const uploadId = useId();
+  return <Dialog title="Add a workspace file" onClose={() => { if (!saving) onClose(); }} wide><form onSubmit={async (event) => {
+    event.preventDefault(); setError(""); setSaving(true);
+    try { await onSave(path, content); onClose(); } catch (error) { setError(errorMessage(error)); } finally { setSaving(false); }
+  }}><div className="dialog-body"><p className="dialog-intro">Paste a little context or bring in a text file. It stays inside this session’s workspace. Saving replaces an existing file with the same path.</p><label className="upload-control" htmlFor={uploadId}><Upload size={15} />Choose a text file<span>up to 64 KB</span></label><input id={uploadId} className="visually-hidden" type="file" accept=".md,.txt,.json,.ts,.tsx,.js,.jsx,.css,.html,.csv,.yaml,.yml,.toml,.sql,.xml,.svg" onChange={async (event) => {
+    const file = event.target.files?.[0]; if (!file) return;
+    if (file.size > 65536) { setError("Text files must be 64 KB or smaller."); return; }
+    try { setContent(await file.text()); setPath(file.name); setError(""); } catch { setError("That file could not be read."); }
+  }} /><label className="form-label">File path<input placeholder="notes.md" value={path} onChange={(event) => setPath(event.target.value)} maxLength={240} required autoComplete="off" /></label><label className="form-label">File contents<textarea className="file-editor" value={content} onChange={(event) => setContent(event.target.value)} rows={12} maxLength={65536} spellCheck={false} /><small>{formatBytes(new TextEncoder().encode(content).length)} · UTF-8 text · relative paths only</small></label>{error && <p className="form-error" role="alert">{error}</p>}</div><footer className="dialog-footer"><button type="button" className="button secondary" onClick={onClose} disabled={saving}>Cancel</button><button className="button primary" disabled={saving || !path.trim()}>{saving ? <Spinner /> : <FilePlus2 size={15} />}Save file</button></footer></form></Dialog>;
+}
+
+export function FileDialog({ sessionId, file, onClose }: { sessionId: string; file: { path: string; content: string; bytes: number }; onClose: () => void }) {
+  return <Dialog title={file.path} onClose={onClose} wide><div className="file-viewer-meta"><Code2 size={14} /><span>Plain-text preview</span><span>{formatBytes(file.bytes)}</span><a className="button secondary" href={`/api/sessions/${sessionId}/files?path=${encodeURIComponent(file.path)}&download=1`}><Download size={14} />Download</a></div><pre className="file-viewer">{file.content || "(Empty file)"}</pre><footer className="dialog-footer"><span className="file-safety-caption"><ShieldCheck size={13} />File contents are never executed in this preview.</span><button className="button secondary" onClick={onClose}>Close</button></footer></Dialog>;
+}
+
+export function RenameDialog({ title, onClose, onSave }: { title: string; onClose: () => void; onSave: (title: string) => Promise<void> }) {
+  const [value, setValue] = useState(title); const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  return <Dialog title="Name this session" onClose={onClose}><form onSubmit={async (event) => { event.preventDefault(); setSaving(true); try { await onSave(value); onClose(); } catch (error) { setError(errorMessage(error)); } finally { setSaving(false); } }}><div className="dialog-body"><label className="form-label">Session name<input value={value} onChange={(event) => setValue(event.target.value)} maxLength={100} required /></label>{error && <p className="form-error" role="alert">{error}</p>}</div><footer className="dialog-footer"><button className="button secondary" type="button" onClick={onClose}>Cancel</button><button className="button primary" disabled={saving || !value.trim()}>{saving && <Spinner />}Save name</button></footer></form></Dialog>;
+}
+
+export function DeleteDialog({ title, onClose, onDelete }: { title: string; onClose: () => void; onDelete: () => Promise<void> }) {
+  const [saving, setSaving] = useState(false); const [error, setError] = useState("");
+  return <Dialog title="Delete this session?" onClose={onClose}><div className="dialog-body"><p className="dialog-intro"><strong>{title}</strong></p><p className="dialog-intro">This permanently removes its conversation, event history, and workspace files. Export anything you want to keep first.</p>{error && <p className="form-error" role="alert">{error}</p>}</div><footer className="dialog-footer"><button className="button secondary" onClick={onClose} disabled={saving}>Keep session</button><button className="button danger" disabled={saving} onClick={async () => { setSaving(true); try { await onDelete(); onClose(); } catch (error) { setError(errorMessage(error)); } finally { setSaving(false); } }}>{saving && <Spinner />}Delete session</button></footer></Dialog>;
+}
+
+export function HelpDialog({ onClose }: { onClose: () => void }) {
+  return <Dialog title="A quick orientation" onClose={onClose}><div className="dialog-body help-body"><div className="help-brand"><HarnessMark /><span>Next Harness<small>A considered workspace for agentic work.</small></span></div><ol><li><strong>Give your agent a task.</strong><p>Choose a working style, add context files, and tell it what you need.</p></li><li><strong>Keep the process in view.</strong><p>Watch responses stream in. Inspect tools, the task plan, and the durable event history.</p></li><li><strong>Stay in charge of changes.</strong><p>Review the exact content before approving a file write. Approval is for that action only.</p></li><li><strong>Pick the right provider.</strong><p>Demo is a deterministic, key-free walkthrough. DeepSeek requires a server-side API key and may incur provider charges.</p></li></ol><div className="connection-notice"><ShieldCheck size={16} /><p>Designed for one trusted user on one Node server. No shell execution or unrestricted host file access. Set an access token before remote use.</p></div><a className="text-link" href="https://github.com/furabbogor/next-harness#readme" target="_blank" rel="noopener noreferrer">Setup, architecture, and deployment notes <ArrowRight size={14} /></a></div><footer className="dialog-footer"><button className="button primary" onClick={onClose}>Let’s get to it<ArrowRight size={15} /></button></footer></Dialog>;
+}
+
+export function UnlockScreen({ onUnlock, error }: { onUnlock: (token: string) => Promise<void>; error: string }) {
+  const [token, setToken] = useState(""); const [pending, setPending] = useState(false);
+  return <main className="unlock-screen"><form className="unlock-card" onSubmit={async (event) => { event.preventDefault(); setPending(true); try { await onUnlock(token); } finally { setPending(false); } }}><HarnessMark /><span className="eyebrow">NEXT HARNESS</span><h1>Your workspace.<br /><em>Your way in.</em></h1><p>This server is protected. Enter its access token to continue.</p><label className="form-label">Access token<div className="token-input"><LockKeyhole size={17} /><input type="password" autoComplete="current-password" value={token} onChange={(event) => setToken(event.target.value)} required maxLength={1000} autoFocus /></div></label>{error && <p className="form-error" role="alert">{error}</p>}<button className="button primary" disabled={pending || !token}>{pending ? <Spinner /> : <KeyRound size={16} />}Unlock workspace<ArrowRight size={16} /></button><small>Configured with HARNESS_ACCESS_TOKEN on the server.</small></form></main>;
+}
