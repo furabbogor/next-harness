@@ -1,13 +1,13 @@
-import { db } from "@/db";
-import { sql } from "drizzle-orm";
-
+import { getHarness } from "@/lib/app-service";
+import { json } from "@/lib/http";
 export const dynamic = "force-dynamic";
-
+export const runtime = "nodejs";
 export async function GET() {
   try {
-    await db.execute(sql`select 1`);
-    return Response.json({ ok: true });
+    const harness = getHarness();
+    await harness.store.health();
+    return json({ ok: true, status: "healthy", version: "0.1.0", storage: harness.store.kind });
   } catch {
-    return Response.json({ ok: false }, { status: 500 });
+    return json({ ok: false, status: "unavailable", message: "Storage or server configuration is unavailable." }, 503);
   }
 }
