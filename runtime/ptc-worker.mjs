@@ -100,7 +100,11 @@ function checkedDump(handle, allowUndefined = false) {
 }
 
 function guestError(code, message) {
-  return context.newError({ name: "Error", message: `${code}: ${message}` });
+  const error = context.newError({ name: "Error", message: `${code}: ${message}` });
+  const codeValue = context.newString(code);
+  context.setProp(error, "code", codeValue);
+  codeValue.dispose();
+  return error;
 }
 
 function rejectImmediately(code, message) {

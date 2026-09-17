@@ -1,4 +1,4 @@
-import { fork, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import {
@@ -89,10 +89,12 @@ export async function runPtc(options: PtcOptions): Promise<PtcResult> {
     const onAbort = () => stop("CANCELLED", "The run was stopped.");
 
     try {
-      child = fork(resolve(process.cwd(), "runtime", "ptc-worker.mjs"), [], {
+      // Spawn the separately shipped Node entry with IPC. Unlike fork's static
+      // entry rewriting in Next/Turbopack, the worker remains a real .mjs file.
+      // No parent execArgv, debugger, loader, shell, or application env is inherited.
+      child = spawn(process.execPath, [resolve(/* turbopackIgnore: true */ process.cwd(), "runtime", "ptc-worker.mjs")], {
         serialization: "json",
-        // Avoid inheriting debuggers, loaders, and other parent Node execution hooks.
-        execArgv: [],
+        shell: false,
         stdio: ["ignore", "ignore", "ignore", "ipc"],
         // Do not pass application configuration, credentials, or arbitrary parent env values.
         env: { NODE_ENV: process.env.NODE_ENV === "development" ? "development" : "production", PATH: process.env.PATH ?? "" },

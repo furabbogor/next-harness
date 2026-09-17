@@ -1,29 +1,31 @@
 # Reference feature coverage
 
-Next Harness is an independent Next.js implementation inspired by the supplied `deepseek-harness-master/`. It is not a Cordis plugin host, a binary-compatible port, or an official DeepSeek product. The supplied root Next.js project matches the repository baseline; the reference stays outside the application build.
+Next Harness is an independent Next.js implementation inspired by the supplied `deepseek-harness-master/`. It is not a Cordis plugin host, a binary-compatible port, or an official DeepSeek product. The supplied root application matched the repository baseline; the reference stays outside the build and distribution.
 
-## Session implementation plan
+## Implemented and verified
 
-| Surface | Baseline | Planned acceptance evidence |
+| Surface | Implementation | Acceptance evidence |
 | --- | --- | --- |
-| Sessions, persisted events, file/PostgreSQL storage | Implemented | CRUD, concurrent mutations, restart recovery, actual PostgreSQL integration |
-| Streaming DeepSeek model/tool loop | Implemented | Split SSE/UTF-8, tool fragments, cancellation, protocol failures; live API only when a key is available |
-| Confined workspace + exact write approvals | Implemented | Traversal/symlink rejection, deny, expiry, single use, recovery |
-| PTC `native` / `ptc` / `both` modes | Missing | Provider-visible tool projection, reserved `run_code`, typed SDK |
-| Isolated TypeScript PTC runtime | Missing | Real fresh worker; no process/filesystem/network globals; CPU, memory, code and output limits |
-| PTC host bindings and nested approvals | Missing | Registry validation, bounded dispatch, exact nested write approval, abort/expiry; no code replay |
-| PTC trajectory UI | Missing | Code, logs, value, nested calls and errors displayed from saved events |
-| Context compaction | Missing | Whole-turn projection, persisted summary, originals retained, no broken tool-result pairs |
-| Skills | Missing | Bounded operator-configured SKILL.md discovery, selected content logged before model use |
-| Delegated tasks | Missing | Bounded, cancellable, read-only child agents; result/usage and trace recorded |
-| Planning / todo / goal state | Plan only | Durable state changes visible to the user and model |
-| MCP external tools | Missing | Opt-in server configuration, discovery and validated calls; untrusted writes require approval |
-| Browser end-to-end / deployment | Not verified | Desktop/mobile, approval flow, PTC, production build and documented persistent runtime |
+| Sessions and durable events | File and PostgreSQL stores, version-1 compatibility, version-2 planning/context state | CRUD, rollback, concurrency, restart interruption; real PostgreSQL migration/round-trip suite |
+| Provider/model loop | Streaming DeepSeek adapter and explicit deterministic demo | SSE/UTF-8 fragmentation, tool arguments, errors, cancellation; no live DeepSeek account tested |
+| Workspaces and approvals | Confined text files; literal search and exact edits; one-time write approvals | Traversal/symlink rejection; approve, deny, expiry, duplicate response and restart tests |
+| PTC modes | `native`, `ptc`, `both`; reserved `run_code`; visible-only generated TypeScript SDK | Direct and provider-initiated integration tests; disabled/recursive binding rejection |
+| Isolated PTC execution | Fresh QuickJS-WASM Node child, strict JSON, no host globals/imports/network APIs | Real worker tests for loops, concurrent bindings, code/CPU/memory/output/call limits and cancellation |
+| Nested PTC approval | Same live invocation waits for exact approval; ordered host dispatch | Two successive approvals without replay; caught/uncaught denial; cancellation, expiry, restart and shared budget tests |
+| PTC interface | Console, tool modes, approval cards and saved execution events | TypeScript/lint/production build passed; browser verification is a separate milestone |
+| Context compaction | Bounded extractive checkpoints at whole-turn boundaries; originals retained | Tool/result pairing, stale checkpoints, repeated compaction and fresh-service reuse |
+| Skills | Operator-managed `SKILL.md` discovery and explicit session selection | Path/symlink/size checks, prompt injection boundary, content/digest audit trail |
+| Delegated tasks | Bounded read-only child agents, shared usage/call/time budgets | Tool restrictions, child traces, result round-trip and public reasoning redaction |
+| Planning / todos / goals | Durable state tools and model-visible planning state | Updates through actual harness/PTC; file search/edit regression coverage |
+| MCP | Opt-in Streamable HTTP gateway; schema-validated discovered tools; every call requires approval | Real local MCP transport fixture plus harness approval integration; third-party deployments not tested |
 
-## Deliberate differences
+## Not implemented / not claimed
 
-The reference supports a large plugin ecosystem: native Node execution under OS confinement, shell/terminal, SSH, browser/computer control, LSP, workflow/webhook/schedule services, multiple SDKs and experimental Python. Those are not automatically enabled by copying the reference. They remain out of scope unless an implementation and verification are explicitly listed here.
+- Shell, terminal, SSH, unrestricted Node/Python execution and OS-level sandboxing.
+- Browser/computer control, LSP, workflow/webhook/schedule services.
+- Cordis plugin/API compatibility or full parity with every reference subsystem.
+- Distributed live-run coordination, serverless execution or safe multi-tenant hosting.
 
-PTC must not use `eval` or `node:vm` as a security boundary. It must not replay a partially executed program after an approval or restart. Intermediate values stay inside one live invocation; persisted events are an audit record, not executable checkpoints. A process restart fails interrupted work without re-executing side effects.
+PTC is not shell access. QuickJS isolates guest JavaScript from exposed host APIs but is **not an operating-system sandbox**. No partially executed program is replayed after approval or restart. A process restart fails interrupted work; durable traces are audit records, not executable checkpoints. Every external MCP call crosses a trust boundary and must be approved.
 
-Reference sources: `packages/core/tools/README.md`, `packages/ptc-runtime/ptc-runtime/README.md`, `packages/ptc-runtime/ptc-runtime-node/README.md`, and `docs/subsystems/{compaction,subagent,mcp,skills,jobs,shell,workspace,todo,plan,goal}.md` in the supplied reference folder.
+Reference sources: `packages/core/tools/README.md`, the `packages/ptc-runtime/` READMEs, and `docs/subsystems/{compaction,subagent,mcp,skills,jobs,shell,workspace,todo,plan,goal}.md` in the supplied reference folder.

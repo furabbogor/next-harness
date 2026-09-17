@@ -19,4 +19,14 @@ Major, verified milestones are published to `main` throughout the session, not s
 - Verified a clean milestone snapshot with `npm run typecheck`, `npm test` (49 passing, including 10 real-worker PTC tests), and `npm run lint`.
 - This engine milestone is intentionally separate from the next application wiring milestone; the chat/API integration is still in progress.
 
+## 3. End-to-end PTC and reference-inspired capabilities
+
+- Connected native/PTC/both tool modes, generated SDKs, direct `/ptc` execution, nested live approvals and saved parent/child execution traces.
+- Verified two successive approvals without code replay, one-time decisions, caught and uncaught denial, cancellation, expiry, restart interruption and shared budgets. Fixed structured binding error codes at the QuickJS boundary.
+- Added literal search, exact edit, todo, goal and bounded read-only delegation tools; selected operator-managed skills; whole-turn extractive context checkpoints; and opt-in MCP discovery/execution with mandatory approvals.
+- Wired session settings, the PTC console and generic approval/event rendering. Browser behavior is verified in the next milestone, not inferred from compilation.
+- Preserved the external worker through the Next.js 16 production build; fixed Turbopack's `fork` entry rewriting by launching a real Node child with IPC. Runtime files and QuickJS dependencies are explicitly traced; application data/reference files are excluded.
+- Verified `npm run build`, `npm run typecheck`, `npm run lint`, `git diff --check`, and **86 passing tests** (the three opt-in PostgreSQL tests are skipped without a database URL). Real local PostgreSQL tests separately passed migration/idempotence, CRUD, rollback, concurrency and version-2 persistence.
+- No live DeepSeek API or third-party MCP account was used. Full reference parity and OS-level sandboxing are not claimed.
+
 Verification results are added to each milestone after the corresponding commands run. Live services are never marked tested solely from mocked responses.

@@ -1,12 +1,12 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Activity, AlertCircle, ArrowDown, ArrowUp, ArrowUpRight, BookOpen, Check, ChevronDown, ChevronRight, CircleHelp, Download, FlaskConical, LayoutGrid, LockKeyhole, Menu, MessageSquare, PanelRight, Paperclip, Pencil, Plus, Search, Settings2, ShieldCheck, Square, Trash2, X } from "lucide-react";
+import { Activity, AlertCircle, ArrowDown, Code2, ArrowUp, ArrowUpRight, BookOpen, Check, ChevronDown, ChevronRight, CircleHelp, Download, FlaskConical, LayoutGrid, LockKeyhole, Menu, MessageSquare, PanelRight, Paperclip, Pencil, Plus, Search, Settings2, ShieldCheck, Square, Trash2, X } from "lucide-react";
 import type { AgentConfig, PublicConfig, Session, SessionSummary, WorkspaceFile } from "@/lib/types";
 import { DEFAULT_CONFIG, PRESETS } from "@/lib/settings";
 import { configSchema } from "@/lib/validation";
 import { ApiError, checkResponse, consumeRun, errorMessage, requestJson } from "@/lib/client-api";
 import { ApprovalCard, ChatMessage, StreamingMessage, Welcome } from "./chat-view";
-import { AddFileDialog, DeleteDialog, FileDialog, HelpDialog, RenameDialog, SettingsDialog, UnlockScreen } from "./dialogs";
+import { AddFileDialog, DeleteDialog, FileDialog, HelpDialog, PtcDialog, RenameDialog, SettingsDialog, UnlockScreen } from "./dialogs";
 import { Inspector, type InspectorTab } from "./inspector";
 import { HarnessMark, IconButton, Spinner } from "./ui";
 
@@ -35,7 +35,7 @@ export function WorkspaceApp() {
   const [panelVisible, setPanelVisible] = useState(true);
   const [mobilePanel, setMobilePanel] = useState(false);
   const [tab, setTab] = useState<InspectorTab>("run");
-  const [dialog, setDialog] = useState<"settings" | "help" | "add-file" | "rename" | null>(null);
+  const [dialog, setDialog] = useState<"settings" | "help" | "add-file" | "rename" | "ptc" | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null);
   const [preview, setPreview] = useState<FilePreview | null>(null);
   const [openingFile, setOpeningFile] = useState(false);
@@ -123,7 +123,7 @@ export function WorkspaceApp() {
   useEffect(() => { if (stickToBottom.current && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [session?.messages.length, session?.run?.status, streamText]);
   useEffect(() => { if (!notice) return; const timeout = setTimeout(() => setNotice(""), 3500); return () => clearTimeout(timeout); }, [notice]);
   useEffect(() => {
-    if (!activeId || runStatus !== "running" || busy) return;
+    if (!activeId || (runStatus !== "running" && runStatus !== "awaiting_approval") || busy) return;
     let cancelled = false;
     const timer = setInterval(async () => {
       try {
@@ -178,6 +178,13 @@ export function WorkspaceApp() {
       setStreamText(""); setBusy(false); busyRef.current = false; setStopping(false);
       requestAnimationFrame(() => inputRef.current?.focus());
     }
+  }
+
+  async function runPtc(code: string, description: string) {
+    if (busyRef.current || !publicConfig || config.toolMode === "native") return;
+    busyRef.current = true; setBusy(true); setError(""); setStreamText(""); stickToBottom.current = true;
+    try { const target = await ensureSession(); setDialog(null); await streamAction(target.id, `/api/sessions/${target.id}/ptc`, { code, description }); }
+    catch (error) { busyRef.current = false; setBusy(false); throw error; }
   }
 
   async function sendMessage(event?: FormEvent) {
@@ -235,7 +242,7 @@ export function WorkspaceApp() {
       <div className="sessions-heading"><span>RECENT SESSIONS</span><span>{sessions.length.toString().padStart(2, "0")}</span></div><div className="session-list">{booting ? <div className="sidebar-empty"><Spinner label="Loading sessions" /><p>Opening your workspace…</p></div> : filteredSessions.length ? filteredSessions.map((item) => <div key={item.id} className={`session-item ${session?.id === item.id ? "selected" : ""}`}><button className="session-select" disabled={busy} onClick={() => void selectSession(item.id)}><MessageSquare size={15} /><span><strong>{item.title}</strong><small>{item.runStatus === "awaiting_approval" ? "Needs your approval" : item.runStatus === "running" ? "Running" : item.provider === "demo" ? "Demo session" : "DeepSeek session"}</small></span>{item.runStatus === "awaiting_approval" && <i className="approval-dot" />}</button><IconButton label={`Delete ${item.title}`} className="session-delete" disabled={busy} onClick={() => setDeleteTarget(item)}><Trash2 size={13} /></IconButton></div>) : <div className="sidebar-empty"><MessageSquare size={21} strokeWidth={1.3} /><p>{query ? "No matching sessions." : "A fresh start looks good on you."}</p><span>{query ? "Try another word." : "Your conversations will live here."}</span></div>}</div>
       <div className="sidebar-bottom"><div className="sidebar-tip"><span className="tip-icon"><ShieldCheck size={16} /></span><p>You set the direction.<br /><strong>You approve the changes.</strong></p></div><button className="sidebar-help" onClick={() => setDialog("help")}><BookOpen size={15} /><span>A quick orientation</span><ArrowUpRight size={14} /></button><div className="local-workspace"><span className="workspace-avatar">N</span><div><strong>Local workspace</strong><span><i className={publicConfig ? "connected" : ""} />{publicConfig ? publicConfig.storage === "file" ? "File storage connected" : "PostgreSQL connected" : "Connecting…"}</span></div>{publicConfig?.protected ? <IconButton label="Lock workspace" onClick={async () => { try { await requestJson("/api/auth", { method: "DELETE" }); streamController.current?.abort(); setSession(null); setSessions([]); setFiles([]); setLocked(true); setError(""); } catch (error) { reportError(error); } }}><LockKeyhole size={15} /></IconButton> : <IconButton label="Workspace help" onClick={() => setDialog("help")}><CircleHelp size={16} /></IconButton>}</div></div>
     </aside>
-    <div className="workspace-shell"><header className="topbar"><div className="topbar-left"><IconButton label="Open navigation" className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={19} /></IconButton><div className="breadcrumbs"><LayoutGrid size={14} /><span>Workspace</span><ChevronRight size={12} /><button onClick={() => { if (session) setDialog("rename"); }} disabled={!session || busy}>{session?.title ?? "New session"}</button></div></div><div className="topbar-actions"><span className={`provider-badge ${config.provider === "demo" ? "demo" : "live"}`}>{config.provider === "demo" ? <FlaskConical size={12} /> : <span className="status-dot" />}{config.provider === "demo" ? "Demo mode" : "DeepSeek"}</span><span className="topbar-divider" />{session && <><IconButton label="Rename session" disabled={busy} onClick={() => setDialog("rename")}><Pencil size={15} /></IconButton><a className="icon-button" aria-label="Export session" title="Export session JSON" href={`/api/sessions/${session.id}/export`}><Download size={16} /></a></>}<IconButton label="Agent settings" disabled={!publicConfig || lockedForEdits} onClick={() => setDialog("settings")}><Settings2 size={17} /></IconButton><IconButton label="Toggle inspector" className={panelVisible ? "is-active" : ""} onClick={() => openInspector()}><PanelRight size={17} /></IconButton></div></header>
+    <div className="workspace-shell"><header className="topbar"><div className="topbar-left"><IconButton label="Open navigation" className="mobile-menu" onClick={() => setSidebarOpen(true)}><Menu size={19} /></IconButton><div className="breadcrumbs"><LayoutGrid size={14} /><span>Workspace</span><ChevronRight size={12} /><button onClick={() => { if (session) setDialog("rename"); }} disabled={!session || busy}>{session?.title ?? "New session"}</button></div></div><div className="topbar-actions"><span className={`provider-badge ${config.provider === "demo" ? "demo" : "live"}`}>{config.provider === "demo" ? <FlaskConical size={12} /> : <span className="status-dot" />}{config.provider === "demo" ? "Demo mode" : "DeepSeek"}</span><span className="topbar-divider" />{session && <><IconButton label="Rename session" disabled={busy} onClick={() => setDialog("rename")}><Pencil size={15} /></IconButton><a className="icon-button" aria-label="Export session" title="Export session JSON" href={`/api/sessions/${session.id}/export`}><Download size={16} /></a></>}<IconButton label="Open PTC console" disabled={!publicConfig || lockedForEdits || config.toolMode === "native"} onClick={() => setDialog("ptc")}><Code2 size={17} /></IconButton><IconButton label="Agent settings" disabled={!publicConfig || lockedForEdits} onClick={() => setDialog("settings")}><Settings2 size={17} /></IconButton><IconButton label="Toggle inspector" className={panelVisible ? "is-active" : ""} onClick={() => openInspector()}><PanelRight size={17} /></IconButton></div></header>
       <div className="workbench"><main className="main-column" id="main-content">
         {(error || notice) && <div className={`app-alert ${error ? "alert-error" : "alert-success"}`} role={error ? "alert" : "status"}>{error ? <AlertCircle size={15} /> : <Check size={15} />}<span>{error || notice}</span>{error && !publicConfig && <button onClick={() => void bootstrap()}>Retry</button>}<IconButton label="Dismiss notification" onClick={() => { setError(""); setNotice(""); }}><X size={14} /></IconButton></div>}
         <div className={`transcript-scroll ${visibleMessages.length ? "has-messages" : ""}`} ref={scrollRef} onScroll={(event) => { const target = event.currentTarget; const near = target.scrollHeight - target.scrollTop - target.clientHeight < 140; stickToBottom.current = near; setShowJump(!near); }}>
@@ -248,6 +255,7 @@ export function WorkspaceApp() {
       <div className={`inspector-shell ${panelVisible ? "desktop-visible" : ""} ${mobilePanel ? "mobile-visible" : ""}`}><Inspector session={session} config={config} publicConfig={publicConfig} tab={tab} onTab={setTab} onClose={() => { setPanelVisible(false); setMobilePanel(false); }} onSettings={() => { if (!lockedForEdits && publicConfig) setDialog("settings"); }} files={files} filesLoading={filesLoading} filesLocked={lockedForEdits || booting} onAddFile={() => setDialog("add-file")} onFile={(path) => void openFile(path)} /></div>
       </div>
     </div>
+    {dialog === "ptc" && <PtcDialog onClose={() => setDialog(null)} onRun={runPtc} />}
     {dialog === "settings" && publicConfig && <SettingsDialog config={config} publicConfig={publicConfig} existing={Boolean(session)} onClose={() => setDialog(null)} onSave={async (value) => {
       if (session) { const result = await requestJson<{ session: Session }>(`/api/sessions/${session.id}`, { method: "PATCH", body: JSON.stringify({ config: value }) }); setSession(result.session); await refreshSessions(); }
       else { setNewConfig(value); localStorage.setItem(DEFAULTS_KEY, JSON.stringify(value)); }

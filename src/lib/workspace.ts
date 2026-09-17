@@ -175,7 +175,7 @@ export function Workspace(workspaceRoot: string) {
     await ensureNoSymlinkParents(directory);
     const parts = path.split("/");
     await checkNestedDirectory(directory, parts.slice(0, -1));
-    const absolute = join(directory, ...parts);
+    const absolute = join(/* turbopackIgnore: true */ directory, ...parts);
     const data = await readText(absolute);
     return { path, ...data };
   }
@@ -187,7 +187,7 @@ export function Workspace(workspaceRoot: string) {
     const directory = await ensureSessionDirectory(workspaceRoot, sessionId, true) as string;
     const parts = path.split("/");
     const parent = await ensureNestedDirectory(directory, parts.slice(0, -1));
-    const absolute = join(directory, ...parts);
+    const absolute = join(/* turbopackIgnore: true */ directory, ...parts);
     await ensureNoSymlinkParents(parent);
     const existing = await safeLstat(absolute);
     if (existing?.isSymbolicLink() || (existing && !existing.isFile())) throw workspaceError("INVALID_PATH", "The workspace path is invalid.");

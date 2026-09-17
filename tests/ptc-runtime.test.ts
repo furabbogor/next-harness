@@ -30,10 +30,13 @@ describe("PTC QuickJS runtime", () => {
   });
 
   it("makes binding errors catchable while hiding host exception details", async () => {
-    const result = await run("try { await tools.double({value: 1}); } catch (error) { return String(error).includes('DENIED'); }", {
+    const result = await run("try { await tools.double({value: 1}); } catch (error) { return {code: error.code, readable: String(error).includes('DENIED')}; }", {
       invoke: async () => { throw { code: "DENIED", message: "Not permitted" }; },
     });
-    expect(result).toMatchObject({ status: "completed", value: true });
+    expect(result).toMatchObject({ status: "completed", value: { code: "DENIED", readable: true } });
+    await expect(run("try { await tools.double({value: 1}); } catch (error) { return {code: error.code, message: error.message}; }", {
+      invoke: async () => { throw new Error("private host credential must not escape"); },
+    })).resolves.toMatchObject({ status: "completed", value: { code: "TOOL_ERROR", message: "TOOL_ERROR: The tool failed." } });
   });
 
   it("captures console output and excludes Node globals", async () => {

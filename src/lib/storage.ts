@@ -6,7 +6,7 @@ import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { harnessSessions } from "@/db/schema";
 import { HarnessError } from "@/lib/errors";
-import type { Session, SessionSummary } from "@/lib/types";
+import { EVENT_TYPES, NATIVE_TOOL_NAMES, type Session, type SessionSummary } from "@/lib/types";
 
 export interface SessionStore {
   kind: "file" | "postgres";
@@ -20,7 +20,7 @@ export interface SessionStore {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_RECORD_BYTES = 16 * 1024 * 1024;
-const RECORD_VERSION = 1;
+const RECORD_VERSION = 2;
 
 const toolCallSchema = z.object({
   id: z.string(),
@@ -35,7 +35,10 @@ const agentConfigSchema = z.object({
   systemPrompt: z.string(),
   maxSteps: z.number().int().nonnegative(),
   maxTokens: z.number().int().nonnegative(),
-  tools: z.array(z.enum(["list_files", "read_file", "write_file", "update_plan"])),
+  tools: z.array(z.union([z.enum(NATIVE_TOOL_NAMES), z.string().regex(/^mcp_[a-z0-9_]{1,59}$/)])),
+  toolMode: z.enum(["native", "ptc", "both"]).optional(),
+  skills: z.array(z.string()).optional(),
+  contextMaxCharacters: z.number().int().min(16000).max(180000).optional(),
 });
 const messageSchema = z.object({
   id: z.string(),
@@ -53,11 +56,7 @@ const eventSchema = z.object({
   seq: z.number().int().nonnegative(),
   sessionId: z.string(),
   runId: z.string(),
-  type: z.enum([
-    "run.started", "run.resumed", "run.completed", "run.failed", "run.cancelled", "run.interrupted",
-    "message.user", "message.assistant", "step.started", "tool.called", "tool.completed", "tool.failed",
-    "approval.requested", "approval.decided", "plan.updated",
-  ]),
+  type: z.enum(EVENT_TYPES),
   timestamp: z.string(),
   data: z.record(z.unknown()),
 });
@@ -75,12 +74,15 @@ const approvalSchema = z.object({
   id: z.string(),
   call: toolCallSchema,
   expiresAt: z.string(),
+  parentCallId: z.string().optional(),
 });
 const runSchema = z.object({
   id: z.string(),
   status: z.enum(["running", "awaiting_approval", "completed", "cancelled", "failed"]),
   startedAt: z.string(),
   endedAt: z.string().optional(),
+  deadlineAt: z.string().optional(),
+  kind: z.enum(["agent", "program"]).optional(),
   step: z.number().int().nonnegative(),
   toolCount: z.number().int().nonnegative(),
   pendingCalls: z.array(toolCallSchema),
@@ -96,6 +98,9 @@ const sessionSchema = z.object({
   messages: z.array(messageSchema),
   events: z.array(eventSchema),
   plan: z.array(planItemSchema),
+  todos: z.array(planItemSchema).optional(),
+  goal: z.object({ objective: z.string(), status: z.enum(["active", "completed"]) }).optional(),
+  context: z.object({ throughMessageId: z.string(), summary: z.string(), createdAt: z.string(), compactedMessages: z.number().int().positive() }).optional(),
   usage: usageSchema,
   run: runSchema.nullable(),
 });
@@ -185,7 +190,7 @@ async function readRecord(file: string): Promise<Session> {
       const text = await handle.readFile({ encoding: "utf8" });
       let envelope: unknown;
       try { envelope = JSON.parse(text); } catch { throw corrupt(); }
-      if (!envelope || typeof envelope !== "object" || (envelope as { version?: unknown }).version !== RECORD_VERSION) {
+      if (!envelope || typeof envelope !== "object" || ![1, RECORD_VERSION].includes((envelope as { version?: unknown }).version as number)) {
         throw corrupt();
       }
       return validateSession((envelope as { session?: unknown }).session);

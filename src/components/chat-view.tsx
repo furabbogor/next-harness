@@ -2,7 +2,7 @@
 import { useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowUpRight, Check, CheckCheck, ChevronRight, Clipboard, FileCode2, FileText, FolderOpen, Layers3, ListChecks, ShieldCheck, Sparkles, X } from "lucide-react";
+import { ArrowUpRight, Check, Code2, CheckCheck, ChevronRight, Clipboard, FileCode2, FileText, FolderOpen, Layers3, ListChecks, ShieldCheck, Sparkles, X } from "lucide-react";
 import type { Message, PendingApproval, Session, ToolCall } from "@/lib/types";
 import { formatBytes, HarnessMark, shortTime, Spinner } from "./ui";
 
@@ -28,7 +28,7 @@ export function Markdown({ content, onFile }: { content: string; onFile?: (path:
 
 const toolLabels: Record<string, { label: string; icon: typeof FileText }> = {
   list_files: { label: "List workspace", icon: FolderOpen }, read_file: { label: "Read file", icon: FileText },
-  write_file: { label: "Write file", icon: FileCode2 }, update_plan: { label: "Update plan", icon: ListChecks },
+  write_file: { label: "Write file", icon: FileCode2 }, edit_file: { label: "Edit file", icon: FileCode2 }, search_files: { label: "Search files", icon: FileText }, update_plan: { label: "Update plan", icon: ListChecks }, todo_write: { label: "Write todos", icon: ListChecks }, set_goal: { label: "Set goal", icon: Sparkles }, delegate_task: { label: "Delegate task", icon: Layers3 }, run_code: { label: "Run TypeScript", icon: Code2 },
 };
 
 function ToolCard({ call, result, waiting }: { call: ToolCall; result?: Message; waiting: boolean }) {
@@ -62,14 +62,16 @@ export function StreamingMessage({ text }: { text: string }) {
 
 export function ApprovalCard({ approval, busy, onDecision }: { approval: PendingApproval; busy: boolean; onDecision: (approved: boolean) => void }) {
   const args = approval.call.args && typeof approval.call.args === "object" ? approval.call.args as Record<string, unknown> : {};
-  const path = typeof args.path === "string" ? args.path : "the requested file";
+  const path = typeof args.path === "string" ? args.path : "External action";
+  const isEdit = approval.call.name === "edit_file";
+  const isMcp = approval.call.name.startsWith("mcp_");
   const content = typeof args.content === "string" ? args.content : JSON.stringify(approval.call.args, null, 2);
-  return <section className="approval-card" aria-label="File write approval">
-    <div className="approval-heading"><span className="approval-shield"><ShieldCheck size={19} /></span><div><h3>A quick check before we write.</h3><p>This action needs your permission.</p></div><span className="approval-tag">YOUR CALL</span></div>
-    <div className="approval-file"><FileCode2 size={16} /><strong>{path}</strong><span>{formatBytes(new TextEncoder().encode(content).length)}</span><span>Create / replace</span></div>
-    <details open className="approval-preview"><summary>Review exact file contents<ChevronRight size={13} /></summary><pre>{content}</pre></details>
-    <p className="approval-note">Approves only this path and content. If the file exists, it will be replaced. Expires at {shortTime(approval.expiresAt)}.</p>
-    <div className="approval-actions"><span><ShieldCheck size={13} />Nothing is written before approval.</span><button className="button secondary" disabled={busy} onClick={() => onDecision(false)}><X size={14} />Deny</button><button className="button approve" disabled={busy} onClick={() => onDecision(true)}>{busy ? <Spinner /> : <CheckCheck size={15} />}Approve write</button></div>
+  return <section className="approval-card" aria-label={`${isMcp ? "External action" : "File"} approval`}>
+    <div className="approval-heading"><span className="approval-shield"><ShieldCheck size={19} /></span><div><h3>{isMcp ? "Review an external action." : "A quick check before we write."}</h3><p>{isMcp ? "This untrusted external action needs your permission." : "This action needs your permission."}</p></div><span className="approval-tag">YOUR CALL</span></div>
+    <div className="approval-file"><FileCode2 size={16} /><strong>{isMcp ? approval.call.name : path}</strong><span>{isMcp ? "Complete arguments" : isEdit ? "Exact replacement" : `${formatBytes(new TextEncoder().encode(content).length)}`}</span></div>
+    <details open className="approval-preview"><summary>{isEdit ? "Review exact old and new text" : isMcp ? "Review complete arguments" : "Review exact file contents"}<ChevronRight size={13} /></summary><pre>{JSON.stringify(approval.call.args, null, 2)}</pre></details>
+    <p className="approval-note">{isEdit ? "The oldText must match exactly; this does not create or replace the whole file." : isMcp ? "Approves this external action only; it is not a file write." : "Approves only this path and content. If the file exists, it will be replaced."} Expires at {shortTime(approval.expiresAt)}.</p>
+    <div className="approval-actions"><span><ShieldCheck size={13} />Nothing happens before approval.</span><button className="button secondary" disabled={busy} onClick={() => onDecision(false)}><X size={14} />Deny</button><button className="button approve" disabled={busy} onClick={() => onDecision(true)}>{busy ? <Spinner /> : <CheckCheck size={15} />}{isMcp ? "Approve action" : "Approve"}</button></div>
   </section>;
 }
 
@@ -77,6 +79,7 @@ const starters = [
   { icon: Layers3, label: "Make a plan", description: "Take an idea from a maybe to a next step.", prompt: "Draft a project plan for a small web application.", accent: "peach" },
   { icon: FolderOpen, label: "Explore a workspace", description: "Get your bearings. See what’s already here.", prompt: "Explore the files in this workspace.", accent: "sage" },
   { icon: Sparkles, label: "Meet the harness", description: "A quick tour of how it all works.", prompt: "Explain how the agent harness works.", accent: "lavender" },
+  { icon: Code2, label: "Try programmatic tools", description: "Inspect and create a summary with approval.", prompt: "Demonstrate PTC: inspect the workspace and create ptc-summary.md with my approval.", accent: "peach" },
 ];
 
 export function Welcome({ onPrompt, demo }: { onPrompt: (value: string) => void; demo: boolean }) {
